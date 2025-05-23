@@ -19,6 +19,3 @@ class CHANNEL:
 class WEB:
     PORT = int(os.environ.get("PORT", 8000))
 
-class DATABASE:
-    URI = os.environ.get("DB_URI", "")
-    NAME = os.environ.get("DB_NAME", "MN_Bot_DB")
