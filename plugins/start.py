@@ -1,24 +1,20 @@
 from pyrogram import Client 
 from pyrogram import filters
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup
-from config import OWNER  # Your Telegram user ID
-
+from config import OWNER  # OWNER.ID is used
 
 # Text and buttons
 class TEXT:
     START = """
-<b>I’m a powerful Terabox downloader!</b>
+<b>👋 Hi! I'm your personal Admin Assistant Bot.</b>
 
-📥 Send me a Terabox link to download.
-⚠️ Only videos under 200MB are supported.
-📢 Don’t forget to join our update channel.
-🗑  Before these things you need to add set up dumb chat (bot only send files in dumb chat).
+💬 When users message me, their messages are instantly forwarded to my admin.
 
-<b>How to set up the dumb channel: </b>
-1. Create a new channel. 
-2. Make the bot an admin with all permissions. 
-3. Send the command: /setchat followed by your channel ID.
+📨 If the admin replies, I’ll send that reply back to the original user — all privately.
 
+<b>Simple. Private. Effective.</b>
+
+No commands needed — just start chatting!
 """
     DEVELOPER = "👨‍💻 Developer"
     UPDATES_CHANNEL = "📢 Updates Channel"
@@ -38,7 +34,7 @@ class INLINE:
 @Client.on_message(filters.command("start"))
 async def start(client: Client, message: Message):
     user = message.from_user
-    mention = user.mention
+    mention = user.first_name or "User"
     await message.reply_text(
         TEXT.START,
         disable_web_page_preview=True,
@@ -48,9 +44,10 @@ async def start(client: Client, message: Message):
     # Notify owner
     try:
         await client.send_message(
-            chat_id=OWNER,
-            text=f"👤 User [{mention}](tg://user?id={user.id}) started the bot.\n🆔 User ID: <code>{user.id}</code>",
-            disable_web_page_preview=True
+            chat_id=OWNER.ID,
+            text=f"👤 User <a href='tg://user?id={user.id}'>{mention}</a> started the bot.\n🆔 User ID: <code>{user.id}</code>",
+            disable_web_page_preview=True,
+            parse_mode="html"
         )
     except Exception as e:
         print(f"[Owner Notification Error] {e}")
