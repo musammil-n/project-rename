@@ -36,7 +36,7 @@ class INLINE:
     )
 
 @Client.on_message(filters.command("start"))
-async def start(client: MN_Bot, message: Message):
+async def start(client: Client, message: Message):
     user = message.from_user
     mention = user.mention
     await message.reply_text(
