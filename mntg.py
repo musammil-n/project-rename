@@ -19,7 +19,7 @@ BATCH_DELAY = 2
 MONGO_URL = os.environ.get("MONGO_URL")
 mongo = MongoClient(MONGO_URL)
 db = mongo["mybot"]
-users_collection = db["users"]
+users_collection = db["mntgusersdb"]
 
 # === Reply Markup ===
 reply_markup = InlineKeyboardMarkup([
