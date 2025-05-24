@@ -13,9 +13,6 @@ class API:
 class OWNER:
     ID = int(os.environ.get("OWNER", 0))
 
-class CHANNEL:
-    ID = int(os.environ.get("CHANNEL_ID", 0))
-
 class WEB:
     PORT = int(os.environ.get("PORT", 8000))
 
