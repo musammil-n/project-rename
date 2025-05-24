@@ -11,9 +11,9 @@ logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
 # === Config ===
-OWNER_ID = 123456789  # Change this to your Telegram ID
-BATCH_SIZE = 20
-BATCH_DELAY = 2
+OWNER_ID=640276152
+BATCH_SIZE=20
+BATCH_DELAY=2
 
 # === MongoDB via Koyeb ===
 MONGO_URL = os.environ.get("MONGO_URL")
