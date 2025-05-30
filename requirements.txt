@@ -1,3 +1,5 @@
 pyrogram
+tgcrypto
+ffmpeg-python
 python-dotenv
 Flask
