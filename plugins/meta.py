@@ -18,105 +18,69 @@ async def handle_media(client, message):
         await message.reply_text("Please send a video file to process.")
         return
 
-    video_file = None  # Initialize video_file outside the try block
-    thumbnail_path = None # Initialize thumbnail_path outside the try block
-    output_path = None # Initialize output_path outside the try block
+    video_file = None
+    thumbnail_path = None
+    output_path = None
 
     try:
-        # Download the sent video
+        status_message = await message.reply_text("Downloading video...")
         video_file = await message.download(file_name="./downloads/")
         if not video_file:
-            await message.reply_text("Failed to download the video.")
+            await status_message.edit_text("Failed to download the video.")
             return
 
-        # Download thumbnail
+        await status_message.edit_text("Video downloaded. Downloading thumbnail...")
         thumbnail_path = "./downloads/thumbnail.jpg"
         urllib.request.urlretrieve(THUMBNAIL_URL, thumbnail_path)
         if not os.path.exists(thumbnail_path):
-            await message.reply_text("Failed to download the thumbnail.")
+            await status_message.edit_text("Failed to download the thumbnail.")
             return
 
-        # Extract video metadata
+        await status_message.edit_text("Thumbnail downloaded. Processing video...")
+
         probe = ffmpeg.probe(video_file)
         video_stream = next((stream for stream in probe['streams'] if stream['codec_type'] == 'video'), None)
         if not video_stream:
-            await message.reply_text("No video stream found in the file.")
+            await status_message.edit_text("No video stream found in the file.")
             return
+
         duration = int(float(probe['format']['duration']))
         width = video_stream['width']
         height = video_stream['height']
         video_title = os.path.basename(video_file).rsplit('.', 1)[0]
 
-        # Output file path
         output_path = f"./downloads/edited_{video_title}.mp4"
 
-        # Add metadata with "@mnbots in telegram" prefix
         metadata = {
             'title': f"@mnbots in telegram {video_title}",
             'comment': f"@mnbots in telegram - Edited by MN Bots"
         }
 
-        # Embed metadata and thumbnail using FFmpeg
-        # First pass: Process video and audio streams, add metadata
-        stream = ffmpeg.input(video_file)
-        thumb_stream = ffmpeg.input(thumbnail_path)
+        main_video_input = ffmpeg.input(video_file)
+        thumbnail_input = ffmpeg.input(thumbnail_path)
 
-        # Build the FFmpeg command
-        # This part requires careful construction. We're essentially trying to combine
-        # the main video, add metadata, and also attach the thumbnail as a cover art.
-        # The `ffmpeg-python` library simplifies this, but it's important to understand
-        # how FFmpeg handles multiple inputs and output options.
-
-        # The following command aims to copy video and audio, apply metadata,
-        # and then map the thumbnail as an attached picture.
-        # This is a common way to achieve what you're looking for with ffmpeg-python.
-        # We need to explicitly tell ffmpeg to map the video and audio from the first input
-        # and then map the thumbnail from the second input as an attached picture.
-
-        # Input streams: video_file (0) and thumbnail_path (1)
-        # Output mapping:
-        # - Map all streams from input 0 (video_file)
-        # - Map the video stream from input 1 (thumbnail_path) as an attached picture
-        
-        # This single ffmpeg.output call should handle both metadata and thumbnail embedding
-        ffmpeg_output_args = {
-            'c:v': 'copy',  # Copy video stream
-            'c:a': 'copy',  # Copy audio stream if present
-            'movflags': 'faststart', # Optimize for streaming
-            'overwrite_output': True,
-        }
-
-        # Add metadata arguments
-        for k, v in metadata.items():
-            ffmpeg_output_args[f'metadata:{k}'] = v
-
-        # Add specific metadata for video stream
-        ffmpeg_output_args['metadata:s:v:0'] = "@mnbots in telegram Video"
-
-        # Construct the complex filter for attaching the thumbnail
-        # We'll use the `-i` option for multiple inputs and then map them
-        # ffmpeg-python handles the `-i` for us with multiple input streams.
-        # We need to explicitly map streams.
-        # map 0:v will map video from first input (main video)
-        # map 0:a? will map audio from first input (main video), if present
-        # map 1:v will map video from second input (thumbnail)
-        # disposition:v:1 attached_pic will mark the thumbnail as an attached picture
-
+        # Construct FFmpeg output stream
+        # The 'overwrite_output' and 'quiet' parameters should be passed to .run()
+        # not directly in the .output() chain as FFmpeg options.
         (
             ffmpeg
             .output(
-                stream, # Main video input
-                thumb_stream, # Thumbnail input
+                main_video_input,
+                thumbnail_input,
                 output_path,
-                **ffmpeg_output_args,
-                map=['0:v', '0:a?'], # Map video and optional audio from main input
-                map_metadata='0', # Preserve original metadata from main input
-                **{'disposition:v:1': 'attached_pic', 'metadata:s:v:1': "@mnbots in telegram Thumbnail"} # Map thumbnail as attached pic with metadata
+                vcodec='copy',
+                acodec='copy',
+                movflags='faststart',
+                map=['0:v', '0:a?', '1:v'],
+                **{'disposition:v:1': 'attached_pic', 'metadata:s:v:1': '@mnbots in telegram Thumbnail'},
+                **{f'metadata:{k}': v for k, v in metadata.items()},
+                **{'metadata:s:v:0': '@mnbots in telegram Video'},
             )
-            .run(overwrite_output=True)
+            .run(overwrite_output=True, quiet=True) # <-- Corrected: Pass overwrite_output here
         )
 
-        # Send video with embedded metadata and thumbnail
+        await status_message.edit_text("Video processing complete. Uploading...")
+
         await message.reply_video(
             video=output_path,
             caption=f"@mnbots in telegram {video_title}",
@@ -126,13 +90,54 @@ async def handle_media(client, message):
             supports_streaming=True
         )
 
-        await message.reply_text("Video processed with embedded thumbnail and metadata, optimized for mobile players!")
+        await status_message.edit_text("Video uploaded successfully!")
 
+    except ffmpeg.Error as e:
+        error_message = f"FFmpeg error: {e.stderr.decode() if e.stderr else str(e)}"
+        await message.reply_text(f"Error processing video: {error_message}")
+        print(f"FFmpeg Error Details: {error_message}")
     except Exception as e:
-        await message.reply_text(f"Error processing video: {e}")
+        await message.reply_text(f"An unexpected error occurred: {e}")
+        print(f"Unexpected Error: {e}")
     finally:
-        # Clean up files in all cases (success or error)
-        for path in [video_file, thumbnail_path, output_path]:
+        files_to_clean = [video_file, thumbnail_path, output_path]
+        for path in files_to_clean:
             if path and os.path.exists(path):
-                os.remove(path)
+                try:
+                    os.remove(path)
+                    print(f"Cleaned up: {path}")
+                except OSError as e:
+                    print(f"Error cleaning up {path}: {e}")
 
+# Register the handler (assuming this is in a plugin file like 'meta.py')
+def register(app: Client):
+    app.add_handler(handle_media)
+
+# Note: Your main bot starting code should be in a separate file, e.g., bot.py,
+# and it should import and register this handler.
+# Example:
+# from pyrogram import Client
+# import os
+# from plugins.meta import register as register_meta_plugin # assuming your code is in plugins/meta.py
+
+# API_ID = os.environ.get("API_ID")
+# API_HASH = os.environ.get("API_HASH")
+# BOT_TOKEN = os.environ.get("BOT_TOKEN")
+
+# app = Client(
+#     "my_bot_session",
+#     api_id=int(API_ID),
+#     api_hash=API_HASH,
+#     bot_token=BOT_TOKEN
+# )
+
+# @app.on_message(filters.command("start") & filters.private)
+# async def start_command(client, message):
+#     await message.reply_text("Hello! Send me a video and I will process it.")
+
+# register_meta_plugin(app) # Register the media handler
+
+# if __name__ == "__main__":
+#     print("Bot starting...")
+#     app.run()
+#     print("Bot stopped.")
