@@ -3,14 +3,14 @@ import asyncio
 import urllib.request
 from pyrogram import Client, filters
 import ffmpeg
-import logging # Import the logging module
+import logging
 
-# Configure logging
+# Configure logging (already done, just including for context)
 logging.basicConfig(
-    level=logging.INFO, # Set base logging level to INFO
+    level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
-logger = logging.getLogger(__name__) # Get a logger for this module
+logger = logging.getLogger(__name__)
 
 # Thumbnail URL
 THUMBNAIL_URL = "https://i.ibb.co/MDwd1f3D/6087047735061627461.jpg"
@@ -23,7 +23,6 @@ os.makedirs("./downloads", exist_ok=True)
 async def handle_media(client, message):
     logger.info(f"Received media message from user {message.from_user.id}")
 
-    # Check if the media is a video
     if not message.video:
         logger.warning(f"User {message.from_user.id} sent non-video media.")
         await message.reply_text("Please send a video file to process.")
@@ -61,11 +60,10 @@ async def handle_media(client, message):
         logger.info(f"Thumbnail downloaded to {thumbnail_path}. Processing video...")
         await status_message.edit_text("Thumbnail downloaded. Processing video...")
 
-        # Extract video metadata
         try:
             probe = ffmpeg.probe(video_file)
         except ffmpeg.Error as e:
-            logger.error(f"FFprobe failed to probe video file {video_file}. Error: {e.stderr.decode()}")
+            logger.error(f"FFprobe failed to probe video file {video_file}. Stderr: {e.stderr.decode()}")
             await status_message.edit_text(f"Failed to get video metadata: {e.stderr.decode()}")
             return
         except Exception as e:
@@ -97,16 +95,20 @@ async def handle_media(client, message):
 
         logger.info(f"Starting FFmpeg processing for {video_file}...")
         try:
+            # We'll pass the inputs as a list to ffmpeg.output() and specify the mapping more directly
             (
                 ffmpeg
                 .output(
-                    main_video_input,
-                    thumbnail_input,
+                    main_video_input, # First input stream (index 0)
+                    thumbnail_input,  # Second input stream (index 1)
                     output_path,
                     vcodec='copy',
                     acodec='copy',
                     movflags='faststart',
-                    map=['0:v', '0:a?', '1:v'],
+                    # Explicitly map video and audio from the first input (main_video_input)
+                    # And map the video from the second input (thumbnail_input) as an attached picture
+                    # The 'map' option takes a list of stream specifiers.
+                    map=['0:v:0', '0:a:0?', '1:v:0'], # Using specific indices for clarity
                     **{'disposition:v:1': 'attached_pic', 'metadata:s:v:1': '@mnbots in telegram Thumbnail'},
                     **{f'metadata:{k}': v for k, v in metadata.items()},
                     **{'metadata:s:v:0': '@mnbots in telegram Video'},
@@ -136,11 +138,9 @@ async def handle_media(client, message):
         await status_message.edit_text("Video uploaded successfully!")
 
     except Exception as e:
-        # Catch any other unexpected exceptions
         logger.exception(f"An unhandled error occurred during video processing for user {message.from_user.id}. Error: {e}")
         await message.reply_text(f"An unexpected error occurred: {e}")
     finally:
-        # Ensure cleanup runs even if errors occur
         files_to_clean = [video_file, thumbnail_path, output_path]
         for path in files_to_clean:
             if path and os.path.exists(path):
@@ -153,53 +153,3 @@ async def handle_media(client, message):
 # Register the handler
 def register(app: Client):
     app.add_handler(handle_media)
-
-# Main bot execution (example, adjust based on your bot's structure)
-# This part typically resides in your main bot.py or app.py
-# from pyrogram import Client
-# import os
-
-# from plugins.meta import register as register_meta_plugin # assuming your code is in plugins/meta.py
-
-# # Load environment variables if using python-dotenv
-# # from dotenv import load_dotenv
-# # load_dotenv()
-
-# API_ID = os.environ.get("API_ID")
-# API_HASH = os.environ.get("API_HASH")
-# BOT_TOKEN = os.environ.get("BOT_TOKEN")
-
-# if not all([API_ID, API_HASH, BOT_TOKEN]):
-#     logger.critical("Missing API_ID, API_HASH, or BOT_TOKEN environment variables. Bot cannot start.")
-#     exit(1)
-
-# try:
-#     app = Client(
-#         "my_bot_session",
-#         api_id=int(API_ID),
-#         api_hash=API_HASH,
-#         bot_token=BOT_TOKEN,
-#         plugins=dict(root="plugins") # If your handlers are in a 'plugins' folder
-#     )
-#     # If you prefer manual registration like in your original code:
-#     # register_meta_plugin(app)
-
-# except ValueError:
-#     logger.critical("API_ID must be an integer. Please check your environment variables.")
-#     exit(1)
-# except Exception as e:
-#     logger.critical(f"Failed to initialize Pyrogram Client: {e}", exc_info=True)
-#     exit(1)
-
-# @app.on_message(filters.command("start") & filters.private)
-# async def start_command(client, message):
-#     logger.info(f"Start command received from user {message.from_user.id}")
-#     await message.reply_text("Hello! Send me a video and I will process it with a custom thumbnail and metadata.")
-
-# if __name__ == "__main__":
-#     logger.info("Bot starting...")
-#     try:
-#         app.run()
-#     except Exception as e:
-#         logger.critical(f"Bot encountered a critical error and stopped: {e}", exc_info=True)
-#     logger.info("Bot stopped.")
