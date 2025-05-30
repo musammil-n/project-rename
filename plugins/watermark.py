@@ -97,19 +97,19 @@ async def handle_video_with_watermarks(client, message):
         text_watermark_content = DEFAULT_TEXT_WATERMARK
         text_opacity = 0.8 # 80% opacity for text
         
-        # FFmpeg drawtext filter command string
-        # fontfile: Path to a font on the system (DejaVuSans.ttf is common on Debian)
-        # text: The actual text content
-        # fontcolor: Color of the text (white@0.8 means white with 80% opacity)
-        # fontsize: Size of the text
-        # x=(w-text_w)/2: Centers the text horizontally
-        # y=H-text_h-10: Places text 10 pixels from the bottom edge
-        drawtext_cmd = (
-            f"fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:text='{text_watermark_content}':"
-            f"fontcolor=white@{text_opacity}:fontsize=24:x=(w-text_w)/2:y=H-text_h-10"
-        )
-        # Apply the drawtext filter directly with the command string
-        video_stream = video_stream.filter('drawtext', drawtext_cmd)
+        # Create a dictionary of arguments for the drawtext filter.
+        # ffmpeg-python will correctly format these into the FFmpeg command string.
+        drawtext_args = {
+            'fontfile': '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+            'text': text_watermark_content,
+            'fontcolor': f'white@{text_opacity}', # Use f-string for opacity
+            'fontsize': 24,
+            'x': '(w-text_w)/2',
+            'y': 'H-text_h-10'
+        }
+        
+        # Apply the drawtext filter using keyword arguments from the dictionary
+        video_stream = video_stream.filter('drawtext', **drawtext_args) # <--- THIS IS THE KEY FIX
         logger.info("Text watermark configured for bottom-center position.")
 
         # Combine processed video stream with original audio stream
