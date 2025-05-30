@@ -1,7 +1,6 @@
 import os
 import asyncio
-import urllib.request
-from pyrogram import Client, filters
+import urllib.requestfrom pyrogram import Client, filters
 import ffmpeg
 
 # Thumbnail URL
