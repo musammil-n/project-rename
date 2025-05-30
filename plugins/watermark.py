@@ -9,8 +9,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 # --- Configuration for Watermarks ---
-# Default image watermark URL (NEW URL as provided)
-DEFAULT_IMAGE_WATERMARK_URL = "https://i.ibb.co/prXzxGDm/mnbots.jpg"
+# Default image watermark URL (Your provided photo URL)
+DEFAULT_IMAGE_WATERMARK_URL = "https://i.ibb.co/xW7NS5d/image.jpg"
 # Default text watermark (Your provided text)
 DEFAULT_TEXT_WATERMARK = "join @mnbots in telegram"
 
@@ -33,48 +33,34 @@ async def ensure_default_watermarks():
             logger.info(f"Default image watermark downloaded to {DEFAULT_IMAGE_WATERMARK_PATH}")
         except Exception as e:
             logger.error(f"Failed to download default image watermark from {DEFAULT_IMAGE_WATERMARK_URL}. Error: {e}")
-            pass # Continue without image watermark if download fails
+            # If download fails, the image watermark simply won't be applied,
+            # but the bot will continue attempting to process the video with text watermark.
+            pass
 
 
-# --- Main media handling for videos (direct video or video documents) ---
-@Client.on_message((filters.video | filters.document) & filters.private)
+# --- Main media handling for videos ---
+@Client.on_message(filters.video & filters.private)
 async def handle_video_with_watermarks(client, message):
     """
-    Handles incoming video messages or video documents in private chats,
-    applies dynamically sized photo and text watermarks, then uploads
+    Handles incoming video messages in private chats, applies a photo watermark
+    to the top-left and a text watermark to the bottom-center, then uploads
     the processed video.
     """
     user_id = message.from_user.id
-    logger.info(f"Received message from user {user_id} for watermarking.")
-
-    # Determine if it's a direct video or a video document
-    input_media = None
-    if message.video:
-        input_media = message.video
-        is_video_file = True
-    elif message.document and message.document.mime_type and message.document.mime_type.startswith('video/'):
-        input_media = message.document.video # message.document.video holds video metadata for document
-        is_video_file = True
-    else:
-        # Not a video or unsupported file type, ignore
-        await message.reply_text("Please send a video file (as a direct video or a video document).")
-        return
-
-    # Extract video dimensions for dynamic watermark sizing
-    video_width = input_media.width
-    video_height = input_media.height
-    logger.info(f"Input video dimensions: {video_width}x{video_height}")
+    logger.info(f"Received video from user {user_id} for watermarking.")
 
     # Ensure default watermarks are downloaded before processing
     await ensure_default_watermarks()
 
     input_file_path = None
     output_file_path = None
-    status_message = None
+    status_message = None # Initialize status_message for cleanup in finally block
 
     try:
+        # Send initial status message
         status_message = await message.reply_text("Downloading video...")
         
+        # Download the input video
         input_file_path = await message.download(file_name="./downloads/")
         if not input_file_path:
             logger.error(f"Failed to download input video from user {user_id}. Download returned None.")
@@ -84,6 +70,7 @@ async def handle_video_with_watermarks(client, message):
         logger.info(f"Video downloaded: {input_file_path}")
         await status_message.edit_text("Downloaded. Applying watermarks...")
 
+        # Determine output file path
         base_name = os.path.basename(input_file_path).rsplit('.', 1)[0]
         output_file_path = f"./downloads/watermarked_{base_name}.mp4"
 
@@ -92,63 +79,58 @@ async def handle_video_with_watermarks(client, message):
         video_stream = main_video_input.video
         audio_stream = main_video_input.audio # Get audio stream if it exists
 
-        # 1. Image Watermark (Top Left, Dynamic Size)
+        # 1. Image Watermark (Top Left)
         image_watermark_exists = os.path.exists(DEFAULT_IMAGE_WATERMARK_PATH)
         if image_watermark_exists:
             image_watermark_input = ffmpeg.input(DEFAULT_IMAGE_WATERMARK_PATH)
             
-            # Scale watermark to 10% of the input video's width, maintaining aspect ratio.
-            # 'iw*0.1' means 10% of input width, '-1' means auto-calculate height.
-            watermark_scale_expr = f'iw*{0.1}:-1' 
-            watermark_scaled_stream = image_watermark_input.video.filter('scale', watermark_scale_expr)
-            
             # Apply opacity (70%) and then overlay the image.
             # x='10', y='10' places it 10 pixels from the left and 10 pixels from the top.
-            image_watermark_stream_filtered = watermark_scaled_stream.filter('format', 'rgba').filter('colorchannelmixer', aa=0.7)
+            image_watermark_stream_filtered = image_watermark_input.video.filter('format', 'rgba').filter('colorchannelmixer', aa=0.7)
             video_stream = ffmpeg.filter([video_stream, image_watermark_stream_filtered], 'overlay',
                                          x='10', y='10') 
-            logger.info("Image watermark configured for top-left position with dynamic scaling.")
+            logger.info("Image watermark configured for top-left position.")
         else:
             logger.warning("Default image watermark file not found. Skipping image watermark.")
 
-        # 2. Text Watermark (Bottom Center, Dynamic Font Size)
+        # 2. Text Watermark (Bottom Center)
         text_watermark_content = DEFAULT_TEXT_WATERMARK
         text_opacity = 0.8 # 80% opacity for text
         
-        # Calculate font size dynamically based on video height (e.g., 3% of video height)
-        # Ensure it's an integer and has a minimum size to be readable
-        dynamic_font_size = max(18, int(video_height * 0.03)) 
-        logger.info(f"Calculated text watermark font size: {dynamic_font_size}")
-
         # Create a dictionary of arguments for the drawtext filter.
+        # ffmpeg-python will correctly format these into the FFmpeg command string.
         drawtext_args = {
             'fontfile': '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
             'text': text_watermark_content,
             'fontcolor': f'white@{text_opacity}', # Use f-string for opacity
-            'fontsize': dynamic_font_size, # Use dynamic font size
-            'x': '(w-text_w)/2',          # Centers the text horizontally
-            'y': 'H-text_h-10'            # Places text 10 pixels from the bottom edge
+            'fontsize': 24,
+            'x': '(w-text_w)/2',
+            'y': 'H-text_h-10'
         }
         
         # Apply the drawtext filter using keyword arguments from the dictionary
-        video_stream = video_stream.filter('drawtext', **drawtext_args)
-        logger.info("Text watermark configured for bottom-center position with dynamic font size.")
+        video_stream = video_stream.filter('drawtext', **drawtext_args) # <--- THIS IS THE KEY FIX
+        logger.info("Text watermark configured for bottom-center position.")
 
         # Combine processed video stream with original audio stream
+        # Re-encode video because filters are applied. Copy audio.
         final_output = ffmpeg.output(
             video_stream,
             audio_stream, # Map audio from original input (if exists)
             output_file_path,
             vcodec='libx264',    # Video codec for re-encoding
             acodec='copy',       # Copy audio codec (no re-encoding)
-            preset='medium',     # Encoding speed vs. compression efficiency
-            crf=26,              # Constant Rate Factor for video quality
-            pix_fmt='yuv420p',   # Pixel format for compatibility
-            movflags='faststart' # Optimize for web streaming
+            preset='medium',     # Encoding speed vs. compression efficiency (ultrafast, superfast, medium, slow, etc.)
+            crf=26,              # Constant Rate Factor for video quality (lower is better quality, larger file size)
+            pix_fmt='yuv420p',   # Pixel format for compatibility (especially with older players)
+            movflags='faststart' # Optimize for web streaming (metadata at beginning)
         )
 
         logger.info(f"Starting FFmpeg execution for {input_file_path}...")
         try:
+            # Run the FFmpeg command.
+            # overwrite_output=True: Allows FFmpeg to overwrite output file if it exists.
+            # quiet=True: Suppresses FFmpeg's verbose output to stdout/stderr.
             final_output.run(overwrite_output=True, quiet=True)
             logger.info(f"Watermarks applied successfully. Output: {output_file_path}")
         except ffmpeg.Error as e:
@@ -185,12 +167,14 @@ async def handle_video_with_watermarks(client, message):
         await status_message.edit_text("Watermarked video uploaded successfully!")
 
     except Exception as e:
+        # Catch any unexpected errors during the entire process
         logger.exception(f"An unhandled error occurred during video processing for user {user_id}. Error: {e}")
         if status_message:
             await status_message.edit_text(f"An unexpected error occurred: {e}")
         else:
             await message.reply_text(f"An unexpected error occurred: {e}")
     finally:
+        # Ensure all temporary files are cleaned up
         files_to_clean = [input_file_path, output_file_path]
         for path in files_to_clean:
             if path and os.path.exists(path):
@@ -202,4 +186,8 @@ async def handle_video_with_watermarks(client, message):
 
 # Register the handler with the Pyrogram client
 def register(app: Client):
+    """
+    Registers the handle_video_with_watermarks function as a message handler
+    for the Pyrogram client.
+    """
     app.add_handler(handle_video_with_watermarks)
