@@ -3,3 +3,4 @@ tgcrypto
 ffmpeg-python
 python-dotenv
 Flask
+gunicorn
