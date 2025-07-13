@@ -5,13 +5,18 @@ from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 import subprocess
 import ffmpeg
-
+from motor.motor_asyncio import AsyncIOMotorClient
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from PIL import Image, ImageDraw, ImageFont
 from io import BytesIO
 from hachoir.parser import createParser
 from hachoir.metadata import extractMetadata
+
+# MongoDB Configuration
+MN_DB_URL = os.getenv("MONGODB_URL", "mongodb://localhost:27017")  # Get from environment variable
+client = AsyncIOMotorClient(MN_DB_URL)
+db = client["rename_bot"]
 
 # Constants
 WATERMARK_FONT = "arial.ttf"  # Make sure this font file exists
