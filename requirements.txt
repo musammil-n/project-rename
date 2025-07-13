@@ -3,4 +3,10 @@ tgcrypto
 ffmpeg-python
 python-dotenv
 Flask
+pymongo
 gunicorn
+motor>=3.0.0
+pillow>=9.0.0
+hachoir>=3.0.0
+python-magic>=0.4.0
+pdftk 
